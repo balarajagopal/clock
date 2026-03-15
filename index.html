@@ -23,112 +23,133 @@
   resize();
   window.addEventListener('resize', resize);
 
+  // Returns the position for hour h (1-12) along a rounded-rectangle ring
+  // ringW and ringH define the half-widths of the number ring
+  function hourPos(h, cx, cy, ringW, ringH) {
+    const angle = (h / 12) * Math.PI * 2 - Math.PI / 2;
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+    // intersect ray with rectangle of half-size ringW x ringH
+    let t = Infinity;
+    if (Math.abs(dx) > 0.0001) t = Math.min(t, ringW / Math.abs(dx));
+    if (Math.abs(dy) > 0.0001) t = Math.min(t, ringH / Math.abs(dy));
+    return { x: cx + dx * t, y: cy + dy * t, angle };
+  }
+
   function draw() {
     const W = canvas.width;
     const H = canvas.height;
     const cx = W / 2;
     const cy = H / 2;
-    const S = Math.min(W, H); // scale reference
+    const S = Math.min(W, H);
 
-    // ── Background ──────────────────────────────────────────
+    // ── Background ───────────────────────────────────────────
     const bg = ctx.createRadialGradient(cx, cy * 0.8, 0, cx, cy, Math.max(W, H) * 0.75);
     bg.addColorStop(0, '#1c1c1c');
     bg.addColorStop(1, '#080808');
     ctx.fillStyle = bg;
     ctx.fillRect(0, 0, W, H);
 
-    // Vignette
-    const vig = ctx.createRadialGradient(cx, cy, S * 0.25, cx, cy, Math.max(W, H) * 0.8);
+    const vig = ctx.createRadialGradient(cx, cy, S * 0.1, cx, cy, Math.max(W, H) * 0.75);
     vig.addColorStop(0, 'rgba(0,0,0,0)');
     vig.addColorStop(1, 'rgba(0,0,0,0.6)');
     ctx.fillStyle = vig;
     ctx.fillRect(0, 0, W, H);
 
-    // ── Perimeter tick marks ─────────────────────────────────
-    const margin = S * 0.042;
-    const tickMajorLen = S * 0.036;
-    const tickMinorLen = S * 0.017;
+    // ── Define the number ring ────────────────────────────────
+    // Numbers sit in a rectangle that is ~75% of screen width, ~75% of height
+    // but capped so it looks like a clock face, not ruler-wide
+    const ringW = Math.min(W * 0.38, H * 0.38);  // half-width of number ring
+    const ringH = Math.min(W * 0.32, H * 0.38);  // half-height of number ring
 
-    // Rectangle bounds for tick placement
-    const rx1 = margin, ry1 = margin, rx2 = W - margin, ry2 = H - margin;
-    const perimTop    = rx2 - rx1;
-    const perimRight  = ry2 - ry1;
-    const perimBottom = rx2 - rx1;
-    const perimLeft   = ry2 - ry1;
-    const perimeter   = perimTop + perimRight + perimBottom + perimLeft;
+    // ── Perimeter tick marks ──────────────────────────────────
+    // Ticks run along the full screen edge as before
+    const edgeMargin  = S * 0.018;
+    const tickMajorLen = S * 0.034;
+    const tickMinorLen = S * 0.016;
+    const rx1 = edgeMargin, ry1 = edgeMargin;
+    const rx2 = W - edgeMargin, ry2 = H - edgeMargin;
+    const pTop = rx2 - rx1, pRight = ry2 - ry1;
+    const pBottom = rx2 - rx1, pLeft = ry2 - ry1;
+    const perimeter = pTop + pRight + pBottom + pLeft;
 
     ctx.lineCap = 'round';
-
     for (let i = 0; i < 60; i++) {
       const isMajor = i % 5 === 0;
-      const frac = i / 60;
-      const dist = frac * perimeter;
-
+      const dist = (i / 60) * perimeter;
       let px, py, nx, ny;
-
-      if (dist < perimTop) {
-        // top edge, left→right
+      if (dist < pTop) {
         px = rx1 + dist; py = ry1; nx = 0; ny = 1;
-      } else if (dist < perimTop + perimRight) {
-        // right edge, top→bottom
-        px = rx2; py = ry1 + (dist - perimTop); nx = -1; ny = 0;
-      } else if (dist < perimTop + perimRight + perimBottom) {
-        // bottom edge, right→left
-        px = rx2 - (dist - perimTop - perimRight); py = ry2; nx = 0; ny = -1;
+      } else if (dist < pTop + pRight) {
+        px = rx2; py = ry1 + (dist - pTop); nx = -1; ny = 0;
+      } else if (dist < pTop + pRight + pBottom) {
+        px = rx2 - (dist - pTop - pRight); py = ry2; nx = 0; ny = -1;
       } else {
-        // left edge, bottom→top
-        px = rx1; py = ry2 - (dist - perimTop - perimRight - perimBottom); nx = 1; ny = 0;
+        px = rx1; py = ry2 - (dist - pTop - pRight - pBottom); nx = 1; ny = 0;
       }
-
       const len = isMajor ? tickMajorLen : tickMinorLen;
       ctx.beginPath();
       ctx.moveTo(px, py);
       ctx.lineTo(px + nx * len, py + ny * len);
-      ctx.strokeStyle = isMajor ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.25)';
-      ctx.lineWidth   = isMajor ? S * 0.005 : S * 0.0025;
+      ctx.strokeStyle = isMajor ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.22)';
+      ctx.lineWidth   = isMajor ? S * 0.005 : S * 0.0024;
       ctx.stroke();
     }
 
     // ── Hour numbers ─────────────────────────────────────────
-    const numRadius = S * 0.40;
-    const fontSize  = S * 0.10;
+    const fontSize = S * 0.082;
+    ctx.font         = `500 ${fontSize}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle    = '#ffffff';
-    ctx.font         = `300 ${fontSize}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+
+    const positions = {};
+    for (let h = 1; h <= 12; h++) {
+      positions[h] = hourPos(h, cx, cy, ringW, ringH);
+    }
 
     for (let h = 1; h <= 12; h++) {
-      const angle = (h / 12) * Math.PI * 2 - Math.PI / 2;
-      ctx.fillText(h, cx + numRadius * Math.cos(angle), cy + numRadius * Math.sin(angle));
+      const { x, y } = positions[h];
+      ctx.shadowColor = 'rgba(0,0,0,0.9)';
+      ctx.shadowBlur  = fontSize * 0.7;
+      ctx.fillStyle   = '#ffffff';
+      ctx.fillText(h, x, y);
+      ctx.shadowBlur  = 0;
     }
 
     // ── QUARTZ label ─────────────────────────────────────────
-    ctx.font      = `400 ${S * 0.02}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
-    ctx.fillStyle = 'rgba(255,255,255,0.18)';
-    ctx.fillText('QUARTZ', cx, cy + numRadius * 0.5);
+    ctx.font      = `400 ${S * 0.018}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+    ctx.fillStyle = 'rgba(255,255,255,0.16)';
+    ctx.fillText('QUARTZ', cx, cy + ringH * 0.45);
 
-    // ── Hands ────────────────────────────────────────────────
-    const now = new Date();
-    const sec = now.getSeconds() + now.getMilliseconds() / 1000;
-    const min = now.getMinutes() + sec / 60;
-    const hr  = (now.getHours() % 12) + min / 60;
+    // ── Hands — reach to just inside the number ring ─────────
+    const now    = new Date();
+    const sec    = now.getSeconds() + now.getMilliseconds() / 1000;
+    const minVal = now.getMinutes() + sec / 60;
+    const hrVal  = (now.getHours() % 12) + minVal / 60;
 
-    const secAngle = sec / 60 * Math.PI * 2 - Math.PI / 2;
-    const minAngle = min / 60 * Math.PI * 2 - Math.PI / 2;
-    const hrAngle  = hr  / 12 * Math.PI * 2 - Math.PI / 2;
+    const minAngle = minVal / 60 * Math.PI * 2 - Math.PI / 2;
+    const hrAngle  = hrVal  / 12 * Math.PI * 2 - Math.PI / 2;
+
+    // Hand reach: cast ray to the number-ring rectangle, minus a small gap
+    function reach(angle, insetW, insetH) {
+      const dx = Math.cos(angle), dy = Math.sin(angle);
+      let t = Infinity;
+      if (Math.abs(dx) > 0.0001) t = Math.min(t, insetW / Math.abs(dx));
+      if (Math.abs(dy) > 0.0001) t = Math.min(t, insetH / Math.abs(dy));
+      return t;
+    }
+
+    const gap = fontSize * 0.7; // gap so hands don't overlap the numbers
+    const minLen = reach(minAngle, ringW - gap, ringH - gap);
+    const hrLen  = reach(hrAngle,  ringW - gap, ringH - gap) * 0.58;
 
     function hand(angle, len, tail, width, color, glow) {
-      const ex = cx + Math.cos(angle) * len;
-      const ey = cy + Math.sin(angle) * len;
-      const tx = cx - Math.cos(angle) * tail;
-      const ty = cy - Math.sin(angle) * tail;
-
       ctx.save();
       ctx.shadowColor = color;
       ctx.shadowBlur  = glow;
       ctx.beginPath();
-      ctx.moveTo(tx, ty);
-      ctx.lineTo(ex, ey);
+      ctx.moveTo(cx - Math.cos(angle) * tail, cy - Math.sin(angle) * tail);
+      ctx.lineTo(cx + Math.cos(angle) * len,  cy + Math.sin(angle) * len);
       ctx.strokeStyle = color;
       ctx.lineWidth   = width;
       ctx.lineCap     = 'round';
@@ -136,8 +157,8 @@
       ctx.restore();
     }
 
-    hand(hrAngle,  S * 0.21, S * 0.04,  S * 0.012, '#f0f0f0', S * 0.06);
-    hand(minAngle, S * 0.31, S * 0.05,  S * 0.008, '#f0f0f0', S * 0.04);
+    hand(hrAngle,  hrLen,  S * 0.04, S * 0.013, '#f0f0f0', S * 0.055);
+    hand(minAngle, minLen, S * 0.05, S * 0.008, '#f0f0f0', S * 0.038);
 
     // ── Center jewel ─────────────────────────────────────────
     ctx.save();
@@ -148,7 +169,6 @@
     ctx.fillStyle = '#c8a84b';
     ctx.fill();
     ctx.restore();
-
     ctx.beginPath();
     ctx.arc(cx, cy, S * 0.007, 0, Math.PI * 2);
     ctx.fillStyle = '#111';

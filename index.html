@@ -36,31 +36,30 @@
 
     const W  = canvas.width, H = canvas.height;
     const cx = W / 2,        cy = H / 2;
-    const R  = Math.min(W, H) * 0.42; // clock radius
+    const R  = Math.min(W, H) * 0.385;
     const S  = Math.min(W, H);
 
     // Pure black — OLED pixels off
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
 
-    // ── Tick marks ──────────────────────────────────────────
+    // ── Tick marks (inside the circle) ──────────────────────
     ctx.lineCap = 'round';
     for (let i = 0; i < 60; i++) {
       const a      = (i / 60) * Math.PI * 2 - Math.PI / 2;
       const isMaj  = i % 5 === 0;
-      const outer  = R;
-      const inner  = isMaj ? R - S * 0.032 : R - S * 0.015;
+      const inner  = R;
+      const outer  = isMaj ? R - S * 0.032 : R - S * 0.015;
       ctx.beginPath();
-      ctx.moveTo(cx + Math.cos(a) * outer, cy + Math.sin(a) * outer);
-      ctx.lineTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
+      ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
+      ctx.lineTo(cx + Math.cos(a) * outer, cy + Math.sin(a) * outer);
       ctx.strokeStyle = isMaj ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.18)';
       ctx.lineWidth   = isMaj ? S * 0.004 : S * 0.002;
       ctx.stroke();
     }
 
-    // ── Hour numbers ────────────────────────────────────────
-    const numR    = R * 0.72;
-    const fontSize = S * 0.09;
+    // ── Hour numbers (outside the circle) ───────────────────
+    const numR    = R * 1.18;
     const fontSizeMaj = S * 0.115;
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';

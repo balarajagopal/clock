@@ -23,31 +23,36 @@
   resize();
   window.addEventListener('resize', resize);
 
-  // Place a point at fraction `frac` (0–1) along the perimeter of a rectangle
-  // starting from top-center going clockwise, matching clock: 12 at top, 3 right, etc.
-  function perimPoint(frac, x1, y1, x2, y2) {
+  // Walk a fraction (0=12oclock, 0.25=3, 0.5=6, 0.75=9) along a rectangle
+  // starting at top-center, going clockwise.
+  // x1,y1 = top-left corner, x2,y2 = bottom-right corner
+  // Returns {x, y, nx, ny} where nx,ny is the inward normal
+  function rectPoint(frac, x1, y1, x2, y2) {
     const w = x2 - x1, h = y2 - y1;
     const perim = 2 * (w + h);
-    // Start at top-center, go clockwise
-    const start = w / 2; // distance along top from left corner to center-top
-    let d = (frac * perim + start) % perim;
+    // distance from top-left corner to top-center = w/2
+    // so offset our walk by w/2 to start at top-center
+    let d = ((frac * perim) + w / 2) % perim;
 
-    let px, py;
+    let px, py, nx, ny;
     if (d < w) {
-      px = x1 + d;       py = y1;           // top edge →
+      // top edge, left→right
+      px = x1 + d; py = y1; nx = 0; ny = 1;
     } else if (d < w + h) {
-      px = x2;           py = y1 + (d - w); // right edge ↓
-    } else if (d < 2*w + h) {
-      px = x2 - (d - w - h); py = y2;       // bottom edge ←
+      // right edge, top→bottom
+      px = x2; py = y1 + (d - w); nx = -1; ny = 0;
+    } else if (d < 2 * w + h) {
+      // bottom edge, right→left
+      px = x2 - (d - w - h); py = y2; nx = 0; ny = -1;
     } else {
-      px = x1;           py = y2 - (d - 2*w - h); // left edge ↑
+      // left edge, bottom→top
+      px = x1; py = y2 - (d - 2 * w - h); nx = 1; ny = 0;
     }
-    return { x: px, y: py };
+    return { x: px, y: py, nx, ny };
   }
 
   function draw() {
-    const W = canvas.width;
-    const H = canvas.height;
+    const W = canvas.width, H = canvas.height;
     const cx = W / 2, cy = H / 2;
     const S = Math.min(W, H);
 
@@ -64,27 +69,15 @@
     ctx.fillStyle = vig;
     ctx.fillRect(0, 0, W, H);
 
-    // ── Perimeter tick marks ──────────────────────────────────
+    // ── Shared perimeter: ticks live here ────────────────────
     const edgeM = S * 0.018;
-    const tx1 = edgeM, ty1 = edgeM, tx2 = W - edgeM, ty2 = H - edgeM;
-    const pW = tx2 - tx1, pH = ty2 - ty1;
-    const perim = 2 * (pW + pH);
+    const ex1 = edgeM, ey1 = edgeM, ex2 = W - edgeM, ey2 = H - edgeM;
     const tickMaj = S * 0.034, tickMin = S * 0.016;
 
     ctx.lineCap = 'round';
     for (let i = 0; i < 60; i++) {
       const frac = i / 60;
-      const d = frac * perim;
-      let px, py, nx, ny;
-      if (d < pW) {
-        px = tx1 + d; py = ty1; nx = 0; ny = 1;
-      } else if (d < pW + pH) {
-        px = tx2; py = ty1 + (d - pW); nx = -1; ny = 0;
-      } else if (d < 2*pW + pH) {
-        px = tx2 - (d - pW - pH); py = ty2; nx = 0; ny = -1;
-      } else {
-        px = tx1; py = ty2 - (d - 2*pW - pH); nx = 1; ny = 0;
-      }
+      const { x: px, y: py, nx, ny } = rectPoint(frac, ex1, ey1, ex2, ey2);
       const isMajor = i % 5 === 0;
       const len = isMajor ? tickMaj : tickMin;
       ctx.beginPath();
@@ -95,27 +88,23 @@
       ctx.stroke();
     }
 
-    // ── Number ring: inset rectangle ─────────────────────────
-    const numInset = S * 0.09;   // inset from screen edge
-    const nx1 = numInset, ny1 = numInset;
-    const nx2 = W - numInset, ny2 = H - numInset;
+    // ── Numbers: same rectPoint system, inset rectangle ──────
+    const numInset = S * 0.09;
+    const nx1 = numInset, ny1 = numInset, nx2 = W - numInset, ny2 = H - numInset;
 
     const fontSize = S * 0.082;
     ctx.font         = `500 ${fontSize}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
 
-    // Store number positions for hand length calculation
-    const numPositions = [];
+    // Hours 12,1,2,...,11 map to fractions 0, 1/12, 2/12, ..., 11/12
     for (let h = 0; h < 12; h++) {
-      const frac = h / 12;
-      const pos = perimPoint(frac, nx1, ny1, nx2, ny2);
-      numPositions.push(pos);
-
+      const frac = h / 12; // 0 = 12 o'clock
+      const { x, y } = rectPoint(frac, nx1, ny1, nx2, ny2);
       ctx.shadowColor = 'rgba(0,0,0,0.9)';
       ctx.shadowBlur  = fontSize * 0.6;
       ctx.fillStyle   = '#ffffff';
-      ctx.fillText(h === 0 ? 12 : h, pos.x, pos.y);
+      ctx.fillText(h === 0 ? 12 : h, x, y);
       ctx.shadowBlur  = 0;
     }
 
@@ -133,16 +122,12 @@
     const minAngle = minVal / 60 * Math.PI * 2 - Math.PI / 2;
     const hrAngle  = hrVal  / 12 * Math.PI * 2 - Math.PI / 2;
 
-    // Hand reach: same perimeter-intersection approach as numbers,
-    // but inset a bit more (gap so tip doesn't overlap the digit)
+    // Hand reach via ray-cast to inset rectangle (just inside the numbers)
     const handInset = numInset + fontSize * 0.75;
-    const hx1 = handInset, hy1 = handInset;
-    const hx2 = W - handInset, hy2 = H - handInset;
-
     function handReach(angle) {
-      // Ray from center at `angle` intersecting the hand rectangle
       const dx = Math.cos(angle), dy = Math.sin(angle);
-      const hw = (hx2 - hx1) / 2, hh = (hy2 - hy1) / 2;
+      const hw = (W - handInset * 2) / 2;
+      const hh = (H - handInset * 2) / 2;
       let t = Infinity;
       if (Math.abs(dx) > 0.0001) t = Math.min(t, hw / Math.abs(dx));
       if (Math.abs(dy) > 0.0001) t = Math.min(t, hh / Math.abs(dy));

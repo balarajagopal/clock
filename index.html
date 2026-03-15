@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Clock Screensaver</title>
+  <title>Clock</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { width: 100%; height: 100%; background: #0d0d0d; overflow: hidden; }
+    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }
     canvas { display: block; width: 100vw; height: 100vh; }
   </style>
 </head>
@@ -14,133 +14,77 @@
 <canvas id="c"></canvas>
 <script>
   const canvas = document.getElementById('c');
-  const ctx = canvas.getContext('2d');
+  const ctx    = canvas.getContext('2d');
+
+  // ── Low-power strategy ───────────────────────────────────
+  // • Pure black background  → OLED pixels off = zero power
+  // • Only redraws once per second (not 60fps)
+  // • No gradients, no shadows, no glow effects
+  // • Minimal pixel count: thin lines, sparse marks
+  // • document.hidden check pauses when tab is backgrounded
 
   function resize() {
     canvas.width  = window.innerWidth;
     canvas.height = window.innerHeight;
+    drawClock(); // redraw immediately on resize
   }
   resize();
   window.addEventListener('resize', resize);
 
-  // Walk a fraction (0=12oclock, 0.25=3, 0.5=6, 0.75=9) along a rectangle
-  // starting at top-center, going clockwise.
-  // x1,y1 = top-left corner, x2,y2 = bottom-right corner
-  // Returns {x, y, nx, ny} where nx,ny is the inward normal
-  function rectPoint(frac, x1, y1, x2, y2) {
-    const w = x2 - x1, h = y2 - y1;
-    const perim = 2 * (w + h);
-    // distance from top-left corner to top-center = w/2
-    // so offset our walk by w/2 to start at top-center
-    let d = ((frac * perim) + w / 2) % perim;
+  function drawClock() {
+    if (document.hidden) return; // don't paint when tab is not visible
 
-    let px, py, nx, ny;
-    if (d < w) {
-      // top edge, left→right
-      px = x1 + d; py = y1; nx = 0; ny = 1;
-    } else if (d < w + h) {
-      // right edge, top→bottom
-      px = x2; py = y1 + (d - w); nx = -1; ny = 0;
-    } else if (d < 2 * w + h) {
-      // bottom edge, right→left
-      px = x2 - (d - w - h); py = y2; nx = 0; ny = -1;
-    } else {
-      // left edge, bottom→top
-      px = x1; py = y2 - (d - 2 * w - h); nx = 1; ny = 0;
-    }
-    return { x: px, y: py, nx, ny };
-  }
+    const W  = canvas.width, H = canvas.height;
+    const cx = W / 2,        cy = H / 2;
+    const R  = Math.min(W, H) * 0.42; // clock radius
+    const S  = Math.min(W, H);
 
-  function draw() {
-    const W = canvas.width, H = canvas.height;
-    const cx = W / 2, cy = H / 2;
-    const S = Math.min(W, H);
-
-    // ── Background ───────────────────────────────────────────
-    const bg = ctx.createRadialGradient(cx, cy * 0.8, 0, cx, cy, Math.max(W, H) * 0.75);
-    bg.addColorStop(0, '#1c1c1c');
-    bg.addColorStop(1, '#080808');
-    ctx.fillStyle = bg;
+    // Pure black — OLED pixels off
+    ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, W, H);
 
-    const vig = ctx.createRadialGradient(cx, cy, S * 0.1, cx, cy, Math.max(W, H) * 0.75);
-    vig.addColorStop(0, 'rgba(0,0,0,0)');
-    vig.addColorStop(1, 'rgba(0,0,0,0.6)');
-    ctx.fillStyle = vig;
-    ctx.fillRect(0, 0, W, H);
-
-    // ── Shared perimeter: ticks live here ────────────────────
-    const edgeM = S * 0.018;
-    const ex1 = edgeM, ey1 = edgeM, ex2 = W - edgeM, ey2 = H - edgeM;
-    const tickMaj = S * 0.034, tickMin = S * 0.016;
-
+    // ── Tick marks ──────────────────────────────────────────
     ctx.lineCap = 'round';
     for (let i = 0; i < 60; i++) {
-      const frac = i / 60;
-      const { x: px, y: py, nx, ny } = rectPoint(frac, ex1, ey1, ex2, ey2);
-      const isMajor = i % 5 === 0;
-      const len = isMajor ? tickMaj : tickMin;
+      const a      = (i / 60) * Math.PI * 2 - Math.PI / 2;
+      const isMaj  = i % 5 === 0;
+      const outer  = R;
+      const inner  = isMaj ? R - S * 0.032 : R - S * 0.015;
       ctx.beginPath();
-      ctx.moveTo(px, py);
-      ctx.lineTo(px + nx * len, py + ny * len);
-      ctx.strokeStyle = isMajor ? 'rgba(255,255,255,0.65)' : 'rgba(255,255,255,0.22)';
-      ctx.lineWidth   = isMajor ? S * 0.005 : S * 0.0024;
+      ctx.moveTo(cx + Math.cos(a) * outer, cy + Math.sin(a) * outer);
+      ctx.lineTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
+      ctx.strokeStyle = isMaj ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.18)';
+      ctx.lineWidth   = isMaj ? S * 0.004 : S * 0.002;
       ctx.stroke();
     }
 
-    // ── Numbers: same rectPoint system, inset rectangle ──────
-    const numInset = S * 0.09;
-    const nx1 = numInset, ny1 = numInset, nx2 = W - numInset, ny2 = H - numInset;
-
-    const fontSize = S * 0.082;
-    ctx.font         = `500 ${fontSize}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+    // ── Hour numbers ────────────────────────────────────────
+    const numR    = R * 0.78;
+    const fontSize = S * 0.058;
+    ctx.font         = `300 ${fontSize}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
     ctx.textAlign    = 'center';
     ctx.textBaseline = 'middle';
+    ctx.fillStyle    = 'rgba(255,255,255,0.85)';
 
-    // Hours 12,1,2,...,11 map to fractions 0, 1/12, 2/12, ..., 11/12
-    for (let h = 0; h < 12; h++) {
-      const frac = h / 12; // 0 = 12 o'clock
-      const { x, y } = rectPoint(frac, nx1, ny1, nx2, ny2);
-      ctx.shadowColor = 'rgba(0,0,0,0.9)';
-      ctx.shadowBlur  = fontSize * 0.6;
-      ctx.fillStyle   = '#ffffff';
-      ctx.fillText(h === 0 ? 12 : h, x, y);
-      ctx.shadowBlur  = 0;
+    for (let h = 1; h <= 12; h++) {
+      const a = (h / 12) * Math.PI * 2 - Math.PI / 2;
+      ctx.fillText(h, cx + Math.cos(a) * numR, cy + Math.sin(a) * numR);
     }
 
-    // ── QUARTZ label ─────────────────────────────────────────
-    ctx.font      = `400 ${S * 0.018}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
-    ctx.fillStyle = 'rgba(255,255,255,0.16)';
-    ctx.fillText('QUARTZ', cx, cy + (ny2 - cy) * 0.42);
+    // ── QUARTZ label ────────────────────────────────────────
+    ctx.font      = `300 ${S * 0.016}px "Helvetica Neue", Helvetica, Arial, sans-serif`;
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    ctx.fillText('QUARTZ', cx, cy + R * 0.42);
 
-    // ── Hands ────────────────────────────────────────────────
+    // ── Hands ───────────────────────────────────────────────
     const now    = new Date();
-    const sec    = now.getSeconds() + now.getMilliseconds() / 1000;
-    const minVal = now.getMinutes() + sec / 60;
+    const minVal = now.getMinutes() + now.getSeconds() / 60;
     const hrVal  = (now.getHours() % 12) + minVal / 60;
 
     const minAngle = minVal / 60 * Math.PI * 2 - Math.PI / 2;
     const hrAngle  = hrVal  / 12 * Math.PI * 2 - Math.PI / 2;
 
-    // Hand reach via ray-cast to inset rectangle (just inside the numbers)
-    const handInset = numInset + fontSize * 0.75;
-    function handReach(angle) {
-      const dx = Math.cos(angle), dy = Math.sin(angle);
-      const hw = (W - handInset * 2) / 2;
-      const hh = (H - handInset * 2) / 2;
-      let t = Infinity;
-      if (Math.abs(dx) > 0.0001) t = Math.min(t, hw / Math.abs(dx));
-      if (Math.abs(dy) > 0.0001) t = Math.min(t, hh / Math.abs(dy));
-      return t;
-    }
-
-    const minLen = handReach(minAngle);
-    const hrLen  = handReach(hrAngle) * 0.58;
-
-    function hand(angle, len, tail, width, color, glow) {
-      ctx.save();
-      ctx.shadowColor = color;
-      ctx.shadowBlur  = glow;
+    function hand(angle, len, tail, width, color) {
       ctx.beginPath();
       ctx.moveTo(cx - Math.cos(angle) * tail, cy - Math.sin(angle) * tail);
       ctx.lineTo(cx + Math.cos(angle) * len,  cy + Math.sin(angle) * len);
@@ -148,30 +92,37 @@
       ctx.lineWidth   = width;
       ctx.lineCap     = 'round';
       ctx.stroke();
-      ctx.restore();
     }
 
-    hand(hrAngle,  hrLen,  S * 0.04, S * 0.013, '#f0f0f0', S * 0.055);
-    hand(minAngle, minLen, S * 0.05, S * 0.008, '#f0f0f0', S * 0.038);
+    hand(hrAngle,  R * 0.54, R * 0.12, S * 0.010, 'rgba(255,255,255,0.92)');
+    hand(minAngle, R * 0.84, R * 0.14, S * 0.006, 'rgba(255,255,255,0.92)');
 
-    // ── Center jewel ─────────────────────────────────────────
-    ctx.save();
-    ctx.shadowColor = '#c8a84b';
-    ctx.shadowBlur  = S * 0.03;
+    // ── Center dot ──────────────────────────────────────────
     ctx.beginPath();
-    ctx.arc(cx, cy, S * 0.016, 0, Math.PI * 2);
-    ctx.fillStyle = '#c8a84b';
-    ctx.fill();
-    ctx.restore();
-    ctx.beginPath();
-    ctx.arc(cx, cy, S * 0.007, 0, Math.PI * 2);
-    ctx.fillStyle = '#111';
+    ctx.arc(cx, cy, S * 0.010, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(200,168,75,0.9)';
     ctx.fill();
 
-    requestAnimationFrame(draw);
+    ctx.beginPath();
+    ctx.arc(cx, cy, S * 0.004, 0, Math.PI * 2);
+    ctx.fillStyle = '#000';
+    ctx.fill();
   }
 
-  draw();
+  // Redraw once per second aligned to the clock tick
+  function scheduleTick() {
+    drawClock();
+    const now   = new Date();
+    const delay = 1000 - now.getMilliseconds(); // wait until next whole second
+    setTimeout(scheduleTick, delay);
+  }
+
+  // Redraw when tab becomes visible again
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) drawClock();
+  });
+
+  scheduleTick();
 </script>
 </body>
 </html>
